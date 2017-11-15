@@ -2,7 +2,9 @@
 Some exercises about Python studying
 
 This project establish a http server using Tornado.
+
 Two interfaces have been completed. 
+
   1.Recording the access times in Redis.
   2.writing the number into MongoDB.
 
