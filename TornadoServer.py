@@ -6,46 +6,70 @@ import tornado.httpserver
 import tornado.ioloop
 import tornado.options
 import tornado.gen
-import redis
 
-from MongoObject import MonClient
-from RedisObject import RedisObject
+import motor
+
+import asyncio
+import asyncio_redis
 
 from tornado.options import define, options
 define("port", default=8000, help="run on the given port", type=int)
 
-CONNECTION_POOL = redis.ConnectionPool(max_connections=100)
-
-redis_server = "192.168.46.10"
-Mongo_server = "192.168.46.10"
+host = "192.168.80.128"
+port = 6379
+mongo_server = "192.168.80.128"
+mongo_port = 27017
 key = "value_count"
 database = "geetest_python"
 collection = "visit"
 
-@tornado.gen.coroutine
+loop = asyncio.get_event_loop()
+
+@asyncio.coroutine
+def get_visit_times():
+    connection = yield from asyncio_redis.Connection.create(host=host, port=port)
+    f = yield from connection.get(key)
+    connection.close()
+    return f
+
+@asyncio.coroutine
+def reset_visit_times():
+    connection = yield from asyncio_redis.Connection.create(host=host, port=port)
+    f = yield from connection.set(key, "0")
+    connection.close()
+
+@asyncio.coroutine
 def count_visit_times():
     # Redis Connection
-    r = RedisObject.redis_connected(host=redis_server, pool=None)
-    value = r.read_key_value(key)
-    visit = int(value) + 1 if value is not None else 1
-    r.modify_key_value(key, visit)
-    return visit
+    connection = yield from asyncio_redis.Connection.create(host=host, port=port)
+    yield from connection.incr(key)
+    f = yield from get_visit_times()
+    connection.close()
+    return f
 
+@tornado.gen.coroutine
+def Add_into_loop(fun):
+    result = loop.run_until_complete(fun)
+    return result
+
+# Indexhander
 class Indexhander(tornado.web.RequestHandler):
     @tornado.web.asynchronous
     @tornado.gen.coroutine
     def get(self):
-        count = yield tornado.gen.Task(count_visit_times)
+        count = yield tornado.gen.Task(Add_into_loop, count_visit_times())
         self.render('index.html', visit_count=count)
 
+# Statishander
 class Statishander(tornado.web.RequestHandler):
+    @tornado.web.asynchronous
+    @tornado.gen.coroutine
     def post(self):
-        DBclient = MonClient()
-        r = RedisObject.redis_connected(host=redis_server, pool=None)
-        DBclient.select_database_and_collection(database, collection=collection)
-        data = int(r.read_key_value(key))
-        DBclient.update_visit_times(data)
-        r.modify_key_value(key, 0)
+        data = yield tornado.gen.Task(Add_into_loop, get_visit_times())
+
+        db = motor.MotorClient(mongo_server)[database]
+        db[collection].update({'title': 'visit_count'}, {'$set': {'visit_count': data}}, callback=None)
+        yield tornado.gen.Task(Add_into_loop, reset_visit_times())
         self.redirect("/")
 
 class Application(tornado.web.Application):
