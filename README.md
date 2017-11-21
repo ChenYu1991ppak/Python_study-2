@@ -7,3 +7,8 @@
   2.writing the number into MongoDB.
 
  The access times recorded in Redis could be written into MongoDB and reset when the botton be clicked.
+
+Revision
+2017.11.21:
+ 1. Nesting asynchronous call of Redis and Mongo in Tornado Requesthander.
+ 2. Conbining Redis and Mongo models into TornadoServer.
